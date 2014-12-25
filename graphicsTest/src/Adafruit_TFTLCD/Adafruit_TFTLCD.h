@@ -70,8 +70,6 @@ private:
 	mraa_gpio_context m_wrPinCtx;
 	mraa_gpio_context m_rdPinCtx;
 	mraa_gpio_context m_dataPinCtx[8];
-
-	mraa_gpio_context m_floodPinCtx;
 };
 
 #endif

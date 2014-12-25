@@ -215,10 +215,6 @@ Adafruit_TFTLCD::Adafruit_TFTLCD() :
 	textcolor = 0xFFFF;
 	_width    = TFTWIDTH;
 	_height   = TFTHEIGHT;
-
-
-	m_floodPinCtx = mraa_gpio_init(19);
-	mraa_gpio_dir(m_floodPinCtx, MRAA_GPIO_OUT);
 }
 
 // Initialization command tables for different LCD controllers
@@ -434,11 +430,6 @@ void Adafruit_TFTLCD::flood(uint16_t color, uint32_t len) {
 			WR_STROBE;
 			WR_STROBE;
 		}
-	}
-	else if (color == 0x07E0 && len == (long)TFTWIDTH * (long)TFTHEIGHT)
-	{
-		mraa_gpio_write(m_floodPinCtx, 1);
-		mraa_gpio_write(m_floodPinCtx, 0);
 	}
 	else
 	{
