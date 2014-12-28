@@ -311,6 +311,41 @@ unsigned long testFilledRoundRects() {
 	return micros() - start;
 }
 
+//#include "images/marci_320x240_srgb.h"
+#include "images/videocalib.h"
+
+unsigned long testDrawImage() {
+	const void* image = imageData;
+	//size_t imageSize = sizeof(imageData);
+	//printf("Image size: %u\n", imageSize);
+
+	tft.setRotation(1);
+
+	size_t numPixel = tft.width() * tft.height();
+	//assert(numPixel * 3 == imageSize);
+	uint16_t* image16 = (uint16_t*)malloc(tft.width() * tft.height() * sizeof(uint16_t));
+
+	for(int y = 0; y < tft.height(); ++y)
+	{
+		for(int x = 0; x < tft.width(); ++x)
+		{
+			uint8_t* i = ((uint8_t*)image) + (y * tft.width() + x) * 3;
+			uint8_t r = *(i++);
+			uint8_t g = *(i++);
+			uint8_t b = *(i++);
+
+			image16[y * tft.width() + x] = tft.color565(r, g, b);
+		}
+	}
+
+	unsigned long start = micros();
+	tft.pushColors(image16, numPixel, true);
+	unsigned long duration = micros() - start;
+
+	free(image16);
+
+	return duration;
+}
 
 int main (int argc, char **argv)
 {
@@ -352,6 +387,10 @@ int main (int argc, char **argv)
 
 	printf("Screen fill              ");
 	printf("%lu\n", testFillScreen());
+	delay(500);
+
+	printf("Draw image               ");
+	printf("%lu\n", testDrawImage());
 	delay(500);
 
 	printf("Text                     ");
