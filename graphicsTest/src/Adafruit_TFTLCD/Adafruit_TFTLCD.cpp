@@ -243,6 +243,86 @@ void Adafruit_TFTLCD::begin(uint16_t id) {
 		writeRegister8(ILI9341_ENTRYMODE, 0x07);
 		/* writeRegister32(ILI9341_DISPLAYFUNC, 0x0A822700);*/
 
+//		writeRegister16(0xF2, 0x00);    // 3Gamma Function Disable
+
+//		writeRegister16(ILI9341_GAMMASET, 0x01);    //Gamma curve selected
+/*
+		CD_COMMAND;
+		write8(ILI9341_GMCTRP1);    //Set Gamma
+		CD_DATA;
+#ifdef ADAFRUIT_GAMMA
+		write16(0x0F);
+		write16(0x31);
+		write16(0x2B);
+		write16(0x0C);
+		write16(0x0E);
+		write16(0x08);
+		write16(0x4E);
+		write16(0xF1);
+		write16(0x37);
+		write16(0x07);
+		write16(0x10);
+		write16(0x03);
+		write16(0x0E);
+		write16(0x09);
+		write16(0x00);
+#else
+		// From MI0283QT-11 spec
+		write16(0x001f);
+		write16(0x001a);
+		write16(0x0018);
+		write16(0x000a);
+		write16(0x000f);
+		write16(0x0006);
+		write16(0x0045);
+		write16(0x0087);
+		write16(0x0032);
+		write16(0x000a);
+		write16(0x0007);
+		write16(0x0002);
+		write16(0x0007);
+		write16(0x0005);
+		write16(0x0000);
+#endif
+
+		CD_COMMAND;
+		write8(ILI9341_GMCTRN1);    //Set Gamma
+		CD_DATA;
+#ifdef ADAFRUIT_GAMMA
+		write16(0x00);
+		write16(0x0E);
+		write16(0x14);
+		write16(0x03);
+		write16(0x11);
+		write16(0x07);
+		write16(0x31);
+		write16(0xC1);
+		write16(0x48);
+		write16(0x08);
+		write16(0x0F);
+		write16(0x0C);
+		write16(0x31);
+		write16(0x36);
+		write16(0x0F);
+#else
+		// From MI0283QT-11 spec
+		write16(0x0000);
+		write16(0x0025);
+		write16(0x0027);
+		write16(0x0005);
+		write16(0x0010);
+		write16(0x0009);
+		write16(0x003a);
+		write16(0x0078);
+		write16(0x004d);
+		write16(0x0005);
+		write16(0x0018);
+		write16(0x000d);
+		write16(0x0038);
+		write16(0x003a);
+		write16(0x001f);
+#endif
+*/
 		writeRegister8(ILI9341_SLEEPOUT, 0);
 		delay(150);
 		writeRegister8(ILI9341_DISPLAYON, 0);
@@ -447,10 +527,9 @@ void Adafruit_TFTLCD::flood(uint16_t color, uint32_t len) {
 			write8(hi);
 			write8(lo);
 		}
-#elif 0
+#elif 1
 		for(int l = len; l; --l) {
-			write8(hi);
-			write8(lo);
+			write16(color);
 		}
 #else
 		blocks = (uint16_t)(len / 64); // 64 pixels/block
@@ -685,9 +764,7 @@ void Adafruit_TFTLCD::drawPixel(int16_t x, int16_t y, uint16_t color) {
 // externally by BMP examples.  Assumes that setWindowAddr() has
 // previously been set to define the bounds.  Max 255 pixels at
 // a time (BMP examples read in small chunks due to limited RAM).
-void Adafruit_TFTLCD::pushColors(uint16_t *data, uint8_t len, bool first) {
-	uint16_t color;
-	uint8_t  hi, lo;
+void Adafruit_TFTLCD::pushColors(uint16_t *data, uint32_t len, bool first) {
 	CS_ACTIVE;
 	if(first == true) { // Issue GRAM write command only on first call
 		CD_COMMAND;
@@ -700,11 +777,8 @@ void Adafruit_TFTLCD::pushColors(uint16_t *data, uint8_t len, bool first) {
 	}
 	CD_DATA;
 	while(len--) {
-		color = *data++;
-		hi    = color >> 8; // Don't simplify or merge these
-		lo    = color;      // lines, there's macro shenanigans
-		write8(hi);         // going on.
-		write8(lo);
+		uint16_t color = *data++;
+		write16(color);
 	}
 	CS_IDLE;
 }
@@ -923,6 +997,41 @@ void Adafruit_TFTLCD::write8(uint8_t value) {
 }
 #endif
 
+void Adafruit_TFTLCD::write16(uint16_t value)
+{
+	uint8_t hi = value >> 8;
+	uint8_t lo = value;
+
+	uint32_t setHi   = (uint32_t)((uint32_t)hi << (TFT_EDISON_DATA0 % 32));
+	uint32_t clearHi = (uint32_t)((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32))
+			| (uint32_t)1 << (TFT_EDISON_WR % 32);
+	uint32_t setLo   = (uint32_t)((uint32_t)lo << (TFT_EDISON_DATA0 % 32));
+	uint32_t clearLo = (uint32_t)((uint32_t)((uint8_t)~lo) << (TFT_EDISON_DATA0 % 32))
+			| (uint32_t)1 << (TFT_EDISON_WR % 32);
+	uint32_t setWr   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+
+#if RUN_WITHIN_SPEC
+	// The display controller spec wants us to hold the data lines at their steady value
+	// on the transition of WR from low to high for at least 10 ns.
+	// This version will do that:
+	*(volatile uint32_t*)mmap_reg_set = setHi;
+	*(volatile uint32_t*)mmap_reg_clear = clearHi;
+	*(volatile uint32_t*)mmap_reg_set = setWr;
+	*(volatile uint32_t*)mmap_reg_set = setLo;
+	*(volatile uint32_t*)mmap_reg_clear = clearLo;
+	*(volatile uint32_t*)mmap_reg_set = setWr;
+#else
+	// Disregarding the spec, it seems to "currently" work to merge the WR switch with
+	// the subsequent data write, shaving off two of six write cycles.
+	// If this stops working in the future, it might be fixable by delaying the WR signal
+	// a little, maybe with a capacitor/low pass filterish circuit.
+	*(volatile uint32_t*)mmap_reg_set = setWr | setHi;
+	*(volatile uint32_t*)mmap_reg_clear = clearHi;
+	*(volatile uint32_t*)mmap_reg_set = setWr | setLo;
+	*(volatile uint32_t*)mmap_reg_clear = clearLo;
+#endif
+}
+
 #ifndef read8
 void Adafruit_TFTLCD::read8(uint8_t& result) {
 	RD_ACTIVE;
@@ -1071,42 +1180,26 @@ void Adafruit_TFTLCD::setReadDir(void) {
 }
 #endif
 
-// Set value of TFT register: 8-bit address, 8-bit value
-#define writeRegister8inline(a, d) { \
-  CD_COMMAND; write8(a); CD_DATA; write8(d); }
-
-// Set value of TFT register: 16-bit address, 16-bit value
-// See notes at top about macro expansion, hence hi & lo temp vars
-#define writeRegister16inline(a, d) { \
-  uint8_t hi, lo; \
-  hi = (a) >> 8; lo = (a); CD_COMMAND; write8(hi); write8(lo); \
-  hi = (d) >> 8; lo = (d); CD_DATA   ; write8(hi); write8(lo); }
-
-// Set value of 2 TFT registers: Two 8-bit addresses (hi & lo), 16-bit value
-#define writeRegisterPairInline(aH, aL, d) { \
-  uint8_t hi = (d) >> 8, lo = (d); \
-  CD_COMMAND; write8(aH); CD_DATA; write8(hi); \
-  CD_COMMAND; write8(aL); CD_DATA; write8(lo); }
-
-
-#ifndef writeRegister8
 void Adafruit_TFTLCD::writeRegister8(uint8_t a, uint8_t d) {
-	writeRegister8inline(a, d);
+	CD_COMMAND;
+	write8(a);
+	CD_DATA;
+	write8(d);
 }
-#endif
 
-#ifndef writeRegister16
-void Adafruit_TFTLCD::writeRegister16(uint16_t a, uint16_t d) {
-	writeRegister16inline(a, d);
+void Adafruit_TFTLCD::writeRegister16(uint8_t a, uint16_t d) {
+	CD_COMMAND;
+	write8(a);
+	CD_DATA;
+	write16(d);
 }
-#endif
 
-#ifndef writeRegisterPair
 void Adafruit_TFTLCD::writeRegisterPair(uint8_t aH, uint8_t aL, uint16_t d) {
-	writeRegisterPairInline(aH, aL, d);
+	// Set value of 2 TFT registers: Two 8-bit addresses (hi & lo), 16-bit value
+	uint8_t hi = (d) >> 8, lo = (d);
+	CD_COMMAND; write8(aH); CD_DATA; write8(hi);
+	CD_COMMAND; write8(aL); CD_DATA; write8(lo);
 }
-#endif
-
 
 void Adafruit_TFTLCD::writeRegister24(uint8_t r, uint32_t d) {
 	CS_ACTIVE;
