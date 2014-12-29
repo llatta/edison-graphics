@@ -72,14 +72,14 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	int periodNSec = 10000;
-	//mraa_pwm_period_us(pwm, periodUSec);
-	mraa_pwm_write_period(pwm, periodNSec);
+	int periodUSec = 10;
+	mraa_pwm_period_us(pwm, periodUSec);
+	//mraa_pwm_write_period(pwm, periodNSec);
 	mraa_pwm_enable(pwm, 1);
-	float value = 0.5f;
-	//float hertz = 10.0f;
 
 	double startTime = 0;
-	while (1) {
+	while (1)
+	{
 		struct timespec t;
 		clock_gettime(CLOCK_REALTIME, &t);
 		double time = (double)t.tv_sec + (double)t.tv_nsec / 1.0e9;
@@ -88,44 +88,32 @@ int main(int argc, char **argv) {
 			startTime = time;
 
 		int sampleIndex = (int)((time - startTime) * SAMPLERATE);
-		value = audioData[sampleIndex % sizeof(audioData)] / 255.0f;
+		float value = audioData[sampleIndex % sizeof(audioData)] / 255.0f;
+		//value = sin(time*hertz * 6.28) * 0.5 + 0.5;
 
 		static int lastPlayedSample = 0;
 		if (lastPlayedSample != sampleIndex)
 		{
 			lastPlayedSample = sampleIndex;
 
-			//value = value + 0.1f;
-			//value = sin(time*hertz * 6.28) * 0.5 + 0.5;
-
 			static int samplesPlayed = 0;
 			static double lastTime = 0;
 			samplesPlayed++;
 			if (time - lastTime > 10.0)
 			{
-				//hertz = hertz * 1.1f;
 				printf("%f samples per second\n", samplesPlayed / (time - lastTime));
 				lastTime = time;
 				samplesPlayed = 0;
 			}
 
 			//mraa_pwm_write(pwm, value);
-	//		periodUSec = 1000000 / hertz;
-	//		mraa_pwm_period_us(pwm, periodUSec);
 			//mraa_pwm_pulsewidth_us(pwm, (int) (value * periodUSec));
 			mraa_pwm_write_duty(pwm, (int) (value * periodNSec));
-			//usleep(1000000 / SAMPLERATE / 10);
+
+			// usleep sleeps to long, need to investigate kernel scheduler (maybe SCHED_FIFO?)
+			//usleep(1000000 / SAMPLERATE);
 			//usleep(1);
 		}
-//		if (value >= 1.0f) {
-//			value = 0.0f;
-//		}
-//		if (hertz > 20000.0f)
-//		{
-//			hertz = 10.0f;
-//		}
-		//float output = mraa_pwm_read(pwm);
-		//printf("%f %f\n", time, value);
 	}
 
 	return 0;
