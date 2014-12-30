@@ -1,8 +1,10 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
 #include <time.h>
+#include <pthread.h>
 
 #include "mraa/pwm.h"
 
@@ -65,11 +67,12 @@ mraa_pwm_write_duty(mraa_pwm_context dev, int duty)
 #include "sample11025-u8.h"
 const int SAMPLERATE = 11025;
 
-int main(int argc, char **argv) {
+void playSoundInfinitely()
+{
 	mraa_pwm_context pwm;
 	pwm = mraa_pwm_init(3);
 	if (pwm == NULL) {
-		return 1;
+		return;
 	}
 	int periodNSec = 10000;
 	int periodUSec = 10;
@@ -87,23 +90,41 @@ int main(int argc, char **argv) {
 		if (startTime == 0)
 			startTime = time;
 
-		int sampleIndex = (int)((time - startTime) * SAMPLERATE);
-		float value = audioData[sampleIndex % sizeof(audioData)] / 255.0f;
+		double sampleIndex = (time - startTime) * SAMPLERATE;
+		float value = audioData[(int)sampleIndex % sizeof(audioData)] / 255.0f;
 		//value = sin(time*hertz * 6.28) * 0.5 + 0.5;
 
 		static int lastPlayedSample = 0;
-		if (lastPlayedSample != sampleIndex)
+		if (lastPlayedSample != (int)sampleIndex)
 		{
-			lastPlayedSample = sampleIndex;
+			lastPlayedSample = (int)sampleIndex;
 
 			static int samplesPlayed = 0;
 			static double lastTime = 0;
+			static double samplesTooLate = 0.0;
+			static double maxSampleTooLate = 0.0;
+			static int numLateSamples = 0;
+
 			samplesPlayed++;
+			// Timing error measurement: How far into the sample are we already?
+			double sampleTooLate = sampleIndex - (int)sampleIndex;
+			samplesTooLate += sampleTooLate;
+			if (sampleTooLate > maxSampleTooLate)
+				maxSampleTooLate = sampleTooLate;
+			if (sampleTooLate > 0.1)
+				numLateSamples++;
+
 			if (time - lastTime > 10.0)
 			{
-				printf("%f samples per second\n", samplesPlayed / (time - lastTime));
+				printf("%f samples per second, timing precision: avg %f, max %f, late %f%%\n",
+						samplesPlayed / (time - lastTime),
+						samplesTooLate / samplesPlayed, maxSampleTooLate,
+						100.0 * numLateSamples / samplesPlayed);
 				lastTime = time;
 				samplesPlayed = 0;
+				samplesTooLate = 0.0;
+				maxSampleTooLate = 0.0;
+				numLateSamples = 0;
 			}
 
 			//mraa_pwm_write(pwm, value);
@@ -115,6 +136,35 @@ int main(int argc, char **argv) {
 			//usleep(1);
 		}
 	}
+}
 
+void* audioThreadMain(void* arg)
+{
+	playSoundInfinitely();
+	return 0;
+}
+
+volatile int dummy = 0;
+
+int main(int argc, char **argv)
+{
+#if 1 // USE_THREAD
+	pthread_t audioThread = 0;
+	int err = pthread_create(&audioThread, NULL, &audioThreadMain, NULL);
+	if (err != 0)
+		printf("Can't create thread: %s\n", strerror(err));
+
+	for (;;)
+	{
+		// Simulate some load.
+		const int s = (int)(10000000.0 * rand() / RAND_MAX);
+		void* p = malloc(s);
+		memset(p, 23, s);
+		free(p);
+		dummy += dummy * dummy;
+	}
+#else
+	playSoundInfinitely();
+#endif
 	return 0;
 }
