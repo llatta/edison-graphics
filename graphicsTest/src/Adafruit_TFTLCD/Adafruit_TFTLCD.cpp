@@ -10,23 +10,16 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 
-#if SIMPLE_PINS
-	static const int TFT_CS = 8;
-	static const int TFT_CD = 9;
-	static const int TFT_WR = 10;
-	static const int TFT_RD = 11;
-	static const int TFT_DATA[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
-#else
-	static const int TFT_CS = 9;
-	static const int TFT_CD = 8;
-	static const int TFT_WR = 7;
-	static const int TFT_RD = 6;
-	static const int TFT_DATA[8] = { 13, 10, 12, 11, 14, 15, 16, 17 };
+// Edison Arduino Pin numbers for the display connection
+static const int TFT_CS = 9;
+static const int TFT_CD = 8;
+static const int TFT_WR = 7;
+static const int TFT_RD = 6;
+static const int TFT_DATA[8] = { 13, 10, 12, 11, 14, 15, 16, 17 };
 
-	// First hardware pin number of the data bits, ie 40-47, and WR flag assumed in the same % 32 range
-	static const int TFT_EDISON_DATA0 = 40;
-	static const int TFT_EDISON_WR = 48;
-#endif
+// First hardware pin number of the data bits, ie 40-47, and WR flag assumed in the same % 32 range
+static const int TFT_EDISON_DATA0 = 40;
+static const int TFT_EDISON_WR = 48;
 
 #define TFTWIDTH   240
 #define TFTHEIGHT  320
@@ -69,23 +62,6 @@ static void delayMicroseconds(int microseconds)
 
 #include "registers.h"
 
-/**
- * A structure representing a gpio pin.
- */
-struct _gpio {
-    /*@{*/
-    int pin; /**< the pin number, as known to the os. */
-    int phy_pin; /**< pin passed to clean init. -1 none and raw*/
-    int value_fp; /**< the file pointer to the value of the gpio */
-    void (* isr)(void *); /**< the interupt service request */
-    void *isr_args; /**< args return when interupt service request triggered */
-    pthread_t thread_id; /**< the isr handler thread id */
-    int isr_value_fp; /**< the isr file pointer on the value */
-    mraa_boolean_t owner; /**< If this context originally exported the pin */
-    mraa_result_t (*mmap_write) (mraa_gpio_context dev, int value);
-    int (*mmap_read) (mraa_gpio_context dev);
-    /*@}*/
-};
 
 // This is an absolute path to a resource file found within sysfs.
 // Might not always be correct. First thing to check if mmap stops
@@ -98,36 +74,6 @@ static uint8_t *mmap_reg_set = NULL;
 static uint8_t *mmap_reg_clear = NULL;
 static int mmap_fd = 0;
 static int mmap_size;
-
-mraa_result_t mraa_intel_edison_mmap_writeX(mraa_gpio_context dev, int value)
-{
-    uint8_t offset = ((dev->pin / 32) * sizeof(uint32_t));
-    uint8_t valoff;
-
-    if (value) {
-        valoff = 0x34;
-    } else {
-        valoff = 0x4c;
-    }
-
-    *(volatile uint32_t*) (mmap_reg + offset + valoff) =
-        (uint32_t)(1 << (dev->pin % 32));
-
-    return MRAA_SUCCESS;
-}
-
-// Requirements: dev points to the first of 8 consecutive pins. All pins need to be in the same % 32 range.
-mraa_result_t mraa_intel_edison_mmap_write8(mraa_gpio_context dev, uint8_t value)
-{
-    uint8_t offset = ((dev->pin / 32) * sizeof(uint32_t));
-
-    uint32_t set   = (uint32_t)((uint32_t)value << (dev->pin % 32));
-    uint32_t clear = (uint32_t)((uint32_t)((uint8_t)~value) << (dev->pin % 32));
-    *(volatile uint32_t*) (mmap_reg + offset + 0x34) = set;
-    *(volatile uint32_t*) (mmap_reg + offset + 0x4c) = clear;
-
-    return MRAA_SUCCESS;
-}
 
 // Constructor for breakout board (configurable LCD control lines).
 Adafruit_TFTLCD::Adafruit_TFTLCD() :
@@ -343,19 +289,6 @@ void Adafruit_TFTLCD::reset(void) {
 	WR_IDLE;
 	RD_IDLE;
 
-#if 0 // TESTCODE
-	setWriteDir();
-	write8(0xff);
-	setWriteDir();
-	CS_ACTIVE;
-	CD_COMMAND;
-	write8(5);
-	CD_DATA;
-	write8(10);
-	CS_IDLE;
-#endif
-
-
 #if 0
 	if(_reset) {
 		digitalWrite(_reset, LOW);
@@ -490,8 +423,7 @@ void Adafruit_TFTLCD::flood(uint16_t color, uint32_t len) {
 
 	if(hi == lo) {
 		// Write first pixel normally, decrement counter by 1
-		write8(hi);
-		write8(lo);
+		write16(color);
 		len--;
 
 		blocks = (uint16_t)(len / 64); // 64 pixels/block
@@ -519,75 +451,19 @@ void Adafruit_TFTLCD::flood(uint16_t color, uint32_t len) {
 		while(blocks--) {
 			i = 16; // 64 pixels/block / 4 pixels/pass
 			do {
-				write8(hi); write8(lo); write8(hi); write8(lo);
-				write8(hi); write8(lo); write8(hi); write8(lo);
+				write16(color);
+				write16(color);
+				write16(color);
+				write16(color);
 			} while(--i);
 		}
 		for(i = (uint8_t)len & 63; i--; ) {
-			write8(hi);
-			write8(lo);
-		}
-#elif 1
-		for(int l = len; l; --l) {
 			write16(color);
 		}
 #else
-		blocks = (uint16_t)(len / 64); // 64 pixels/block
-
-		while(blocks--) {
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
-
-			write8(hi); write8(lo); write8(hi); write8(lo);
-			write8(hi); write8(lo); write8(hi); write8(lo);
+		for(int l = len; l; --l) {
+			write16(color);
 		}
-		for(i = (uint8_t)len & 63; i--; ) {
-			write8(hi);
-			write8(lo);
-		}
-
 #endif
 	}
 	CS_IDLE;
@@ -962,58 +838,27 @@ uint16_t Adafruit_TFTLCD::color565(uint8_t r, uint8_t g, uint8_t b) {
 // For I/O macros that were left undefined, declare function
 // versions that reference the inline macros just once:
 
-#ifndef write8
 void Adafruit_TFTLCD::write8(uint8_t value) {
-#if 0
-	for (int i = 0; i < 8; ++i)
-	{
-		mraa_intel_edison_mmap_writeX(m_dataPinCtx[i], (value >> i) & 1);
-	}
-
-	WR_STROBE;
-#elif 0
-	mraa_intel_edison_mmap_write8(m_dataPinCtx[0], value);
-
-	WR_STROBE;
-#elif 1
-    uint32_t set   = (uint32_t)((uint32_t)value << (m_dataPinCtx[0]->pin % 32));
-    uint32_t clear = (uint32_t)((uint32_t)((uint8_t)~value) << (m_dataPinCtx[0]->pin % 32));
-    uint32_t bit = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+    uint32_t set   = (uint32_t)value << (TFT_EDISON_DATA0 % 32);
+    uint32_t clear = ((uint32_t)((uint8_t)~value) << (TFT_EDISON_DATA0 % 32))
+    		| (uint32_t)1u << (TFT_EDISON_WR % 32);
+    uint32_t setWr   = (uint32_t)1 << (TFT_EDISON_WR % 32);
     *(volatile uint32_t*)mmap_reg_set = set;
     *(volatile uint32_t*)mmap_reg_clear = clear;
-	*(volatile uint32_t*)mmap_reg_clear = bit;
-	*(volatile uint32_t*)mmap_reg_set = bit;
-#elif 0
-    uint8_t offset = ((TFT_EDISON_DATA0 / 32) * sizeof(uint32_t));
-
-    uint32_t set   = (uint32_t)((uint32_t)value << (TFT_EDISON_DATA0 % 32));
-    uint32_t clear = (uint32_t)((uint32_t)((uint8_t)~value) << (TFT_EDISON_DATA0 % 32))
-    		| (uint32_t)1 << (TFT_EDISON_WR % 32);
-    uint32_t set2   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
-    *(volatile uint32_t*) (mmap_reg + offset + 0x34) = set;
-    *(volatile uint32_t*) (mmap_reg + offset + 0x4c) = clear;
-    *(volatile uint32_t*) (mmap_reg + offset + 0x34) = set2;
-#else
-    uint32_t set   = (uint32_t)((uint32_t)value << (TFT_EDISON_DATA0 % 32));
-    uint32_t clear = (uint32_t)((uint32_t)((uint8_t)~value) << (TFT_EDISON_DATA0 % 32))
-    		| (uint32_t)1 << (TFT_EDISON_WR % 32);
-    uint32_t set2   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
-    *(volatile uint32_t*)mmap_reg_set = set;
-    *(volatile uint32_t*)mmap_reg_clear = clear;
-    *(volatile uint32_t*)mmap_reg_set = set2;
-#endif
+    *(volatile uint32_t*)mmap_reg_set = setWr;
 }
-#endif
 
 void Adafruit_TFTLCD::write16(uint16_t value)
 {
 #if 0 // RUNNING_IN_16BIT_MODE
+	// Pretend we have the 16-bit interface of the display hooked up (IM0 pin pulled up to 3.3V)
+	// But we only have 8 pins exposed on the breakout board, so we can only write the lower 8 bits (mostly blue)
 	uint8_t hi = (value >> 8) & 0xF8;
 
-	uint32_t setHi   = (uint32_t)((uint32_t)hi << (TFT_EDISON_DATA0 % 32));
-	uint32_t clearHi = (uint32_t)((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32))
+	uint32_t setHi   = (uint32_t)hi << (TFT_EDISON_DATA0 % 32);
+	uint32_t clearHi = ((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32))
 			| (uint32_t)1 << (TFT_EDISON_WR % 32);
-	uint32_t setWr   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+	uint32_t setWr   = (uint32_t)1 << (TFT_EDISON_WR % 32);
 
 	*(volatile uint32_t*)mmap_reg_set = setWr | setHi;
 	*(volatile uint32_t*)mmap_reg_clear = clearHi;
@@ -1022,11 +867,11 @@ void Adafruit_TFTLCD::write16(uint16_t value)
 	uint8_t lo = value;
 
 #if 0// FAST_MODE_STOPPED_WORKING
-	uint32_t setHi   = (uint32_t)((uint32_t)hi << (TFT_EDISON_DATA0 % 32));
-	uint32_t clearHi = (uint32_t)((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32));
-	uint32_t setLo   = (uint32_t)((uint32_t)lo << (TFT_EDISON_DATA0 % 32));
-	uint32_t clearLo = (uint32_t)((uint32_t)((uint8_t)~lo) << (TFT_EDISON_DATA0 % 32));
-	uint32_t setWr   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+	uint32_t setHi   = (uint32_t)hi << (TFT_EDISON_DATA0 % 32);
+	uint32_t clearHi = ((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32));
+	uint32_t setLo   = (uint32_t)lo << (TFT_EDISON_DATA0 % 32);
+	uint32_t clearLo = ((uint32_t)((uint8_t)~lo) << (TFT_EDISON_DATA0 % 32));
+	uint32_t setWr   = (uint32_t)1 << (TFT_EDISON_WR % 32);
 	*(volatile uint32_t*)mmap_reg_set = setHi;
 	*(volatile uint32_t*)mmap_reg_clear = clearHi;
 	*(volatile uint32_t*)mmap_reg_clear = setWr;
@@ -1037,13 +882,13 @@ void Adafruit_TFTLCD::write16(uint16_t value)
 	*(volatile uint32_t*)mmap_reg_set = setWr;
 
 #else
-	uint32_t setHi   = (uint32_t)((uint32_t)hi << (TFT_EDISON_DATA0 % 32));
-	uint32_t clearHi = (uint32_t)((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32))
+	uint32_t setHi   = (uint32_t)hi << (TFT_EDISON_DATA0 % 32);
+	uint32_t clearHi = ((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32))
 			| (uint32_t)1 << (TFT_EDISON_WR % 32);
-	uint32_t setLo   = (uint32_t)((uint32_t)lo << (TFT_EDISON_DATA0 % 32));
-	uint32_t clearLo = (uint32_t)((uint32_t)((uint8_t)~lo) << (TFT_EDISON_DATA0 % 32))
+	uint32_t setLo   = (uint32_t)lo << (TFT_EDISON_DATA0 % 32);
+	uint32_t clearLo = ((uint32_t)((uint8_t)~lo) << (TFT_EDISON_DATA0 % 32))
 			| (uint32_t)1 << (TFT_EDISON_WR % 32);
-	uint32_t setWr   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+	uint32_t setWr   = (uint32_t)1 << (TFT_EDISON_WR % 32);
 
 #if RUN_WITHIN_SPEC
 	// The display controller spec wants us to hold the data lines at their steady value
@@ -1069,7 +914,6 @@ void Adafruit_TFTLCD::write16(uint16_t value)
 #endif
 }
 
-#ifndef read8
 void Adafruit_TFTLCD::read8(uint8_t& result) {
 	RD_ACTIVE;
 
@@ -1087,10 +931,11 @@ void Adafruit_TFTLCD::read8(uint8_t& result) {
 
 	RD_IDLE;
 }
-#endif
 
 
-
+// Optimized version of mraa_gpio_dir where the tristate gets only flipped once for all 8 bits.
+// Duplicates some MRAA internals. Won't work if structs inside MRAA change too much
+#if 0 // OPTIMIZED_GPIO_DIR
 
 #define SYSFS_CLASS_GPIO "/sys/class/gpio"
 #define MAX_SIZE 64
@@ -1098,6 +943,24 @@ void Adafruit_TFTLCD::read8(uint8_t& result) {
 static unsigned int outputen[] = {248,249,250,251,252,253,254,255,256,257,258,259,260,261,232,233,234,235,236,237};
 static mraa_gpio_context outputPins[sizeof(outputen) / sizeof(outputen[0])] = {0};
 static mraa_gpio_context tristate;
+
+/**
+ * A structure representing a gpio pin.
+ */
+struct _gpio {
+    /*@{*/
+    int pin; /**< the pin number, as known to the os. */
+    int phy_pin; /**< pin passed to clean init. -1 none and raw*/
+    int value_fp; /**< the file pointer to the value of the gpio */
+    void (* isr)(void *); /**< the interupt service request */
+    void *isr_args; /**< args return when interupt service request triggered */
+    pthread_t thread_id; /**< the isr handler thread id */
+    int isr_value_fp; /**< the isr file pointer on the value */
+    mraa_boolean_t owner; /**< If this context originally exported the pin */
+    mraa_result_t (*mmap_write) (mraa_gpio_context dev, int value);
+    int (*mmap_read) (mraa_gpio_context dev);
+    /*@}*/
+};
 
 mraa_result_t
 mraa_intel_edison_gpio_dir_preX(mraa_gpio_context dev, gpio_dir_t dir)
@@ -1173,7 +1036,6 @@ mraa_gpio_dirX(mraa_gpio_context dev, gpio_dir_t dir)
     return mraa_intel_edison_gpio_dir_postX(dev,dir);
 }
 
-#ifndef setWriteDir
 void Adafruit_TFTLCD::setWriteDir(void) {
 	if(tristate == nullptr)
 	{
@@ -1193,9 +1055,7 @@ void Adafruit_TFTLCD::setWriteDir(void) {
 
     mraa_gpio_write(tristate, 1);
 }
-#endif
 
-#ifndef setReadDir
 void Adafruit_TFTLCD::setReadDir(void) {
 	if(tristate == nullptr)
 	{
@@ -1215,7 +1075,24 @@ void Adafruit_TFTLCD::setReadDir(void) {
 
     mraa_gpio_write(tristate, 1);
 }
-#endif
+
+#else // OPTIMIZED_GPIO_DIR
+
+void Adafruit_TFTLCD::setWriteDir(void) {
+    for (int i = 0; i < 8; ++i)
+	{
+		mraa_gpio_dir(m_dataPinCtx[i], MRAA_GPIO_OUT);
+	}
+}
+
+void Adafruit_TFTLCD::setReadDir(void) {
+    for (int i = 0; i < 8; ++i)
+	{
+		mraa_gpio_dir(m_dataPinCtx[i], MRAA_GPIO_IN);
+	}
+}
+#endif // OPTIMIZED_GPIO_DIR
+
 
 void Adafruit_TFTLCD::writeRegister8(uint8_t a, uint8_t d) {
 	CD_COMMAND;
