@@ -8,6 +8,8 @@
 #include <mraa/gpio.h>
 
 
+class Adafruit_TFTLCD : public Adafruit_GFX {
+
 public:
 
 	Adafruit_TFTLCD(void);
