@@ -975,6 +975,14 @@ void Adafruit_TFTLCD::write8(uint8_t value) {
 	mraa_intel_edison_mmap_write8(m_dataPinCtx[0], value);
 
 	WR_STROBE;
+#elif 1
+    uint32_t set   = (uint32_t)((uint32_t)value << (m_dataPinCtx[0]->pin % 32));
+    uint32_t clear = (uint32_t)((uint32_t)((uint8_t)~value) << (m_dataPinCtx[0]->pin % 32));
+    uint32_t bit = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+    *(volatile uint32_t*)mmap_reg_set = set;
+    *(volatile uint32_t*)mmap_reg_clear = clear;
+	*(volatile uint32_t*)mmap_reg_clear = bit;
+	*(volatile uint32_t*)mmap_reg_set = bit;
 #elif 0
     uint8_t offset = ((TFT_EDISON_DATA0 / 32) * sizeof(uint32_t));
 
@@ -999,9 +1007,36 @@ void Adafruit_TFTLCD::write8(uint8_t value) {
 
 void Adafruit_TFTLCD::write16(uint16_t value)
 {
+#if 0 // RUNNING_IN_16BIT_MODE
+	uint8_t hi = (value >> 8) & 0xF8;
+
+	uint32_t setHi   = (uint32_t)((uint32_t)hi << (TFT_EDISON_DATA0 % 32));
+	uint32_t clearHi = (uint32_t)((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32))
+			| (uint32_t)1 << (TFT_EDISON_WR % 32);
+	uint32_t setWr   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+
+	*(volatile uint32_t*)mmap_reg_set = setWr | setHi;
+	*(volatile uint32_t*)mmap_reg_clear = clearHi;
+#else
 	uint8_t hi = value >> 8;
 	uint8_t lo = value;
 
+#if 0// FAST_MODE_STOPPED_WORKING
+	uint32_t setHi   = (uint32_t)((uint32_t)hi << (TFT_EDISON_DATA0 % 32));
+	uint32_t clearHi = (uint32_t)((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32));
+	uint32_t setLo   = (uint32_t)((uint32_t)lo << (TFT_EDISON_DATA0 % 32));
+	uint32_t clearLo = (uint32_t)((uint32_t)((uint8_t)~lo) << (TFT_EDISON_DATA0 % 32));
+	uint32_t setWr   = (uint32_t)((uint32_t)1 << (TFT_EDISON_WR % 32));
+	*(volatile uint32_t*)mmap_reg_set = setHi;
+	*(volatile uint32_t*)mmap_reg_clear = clearHi;
+	*(volatile uint32_t*)mmap_reg_clear = setWr;
+	*(volatile uint32_t*)mmap_reg_set = setWr;
+	*(volatile uint32_t*)mmap_reg_set = setLo;
+	*(volatile uint32_t*)mmap_reg_clear = clearLo;
+	*(volatile uint32_t*)mmap_reg_clear = setWr;
+	*(volatile uint32_t*)mmap_reg_set = setWr;
+
+#else
 	uint32_t setHi   = (uint32_t)((uint32_t)hi << (TFT_EDISON_DATA0 % 32));
 	uint32_t clearHi = (uint32_t)((uint32_t)((uint8_t)~hi) << (TFT_EDISON_DATA0 % 32))
 			| (uint32_t)1 << (TFT_EDISON_WR % 32);
@@ -1029,6 +1064,8 @@ void Adafruit_TFTLCD::write16(uint16_t value)
 	*(volatile uint32_t*)mmap_reg_clear = clearHi;
 	*(volatile uint32_t*)mmap_reg_set = setWr | setLo;
 	*(volatile uint32_t*)mmap_reg_clear = clearLo;
+#endif
+#endif
 #endif
 }
 

@@ -311,14 +311,11 @@ unsigned long testFilledRoundRects() {
 	return micros() - start;
 }
 
-//#include "images/marci_320x240_srgb.h"
+#include "images/marci_320x240_srgb.h"
 #include "images/videocalib.h"
+#include "images/gamma.h"
 
-unsigned long testDrawImage() {
-	const void* image = imageData;
-	//size_t imageSize = sizeof(imageData);
-	//printf("Image size: %u\n", imageSize);
-
+unsigned long testDrawImage(const void* image, size_t imageSize) {
 	tft.setRotation(1);
 
 	size_t numPixel = tft.width() * tft.height();
@@ -389,8 +386,16 @@ int main (int argc, char **argv)
 	printf("%lu\n", testFillScreen());
 	delay(500);
 
-	printf("Draw image               ");
-	printf("%lu\n", testDrawImage());
+	printf("Draw image Gamma         ");
+	printf("%lu\n", testDrawImage(imageDataGamma, sizeof(imageDataGamma)));
+	delay(500);
+
+	printf("Draw image VideoCalib    ");
+	printf("%lu\n", testDrawImage(imageDataVideoCalib, sizeof(imageDataVideoCalib)));
+	delay(500);
+
+	printf("Draw image Marci         ");
+	printf("%lu\n", testDrawImage(imageDataMarci, sizeof(imageDataMarci)));
 	delay(500);
 
 	printf("Text                     ");
